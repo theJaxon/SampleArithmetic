@@ -1,0 +1,43 @@
+trigger:
+- main
+
+pool:
+  vmImage: macOS-11
+
+steps:
+    # Get Latest Rugby release number from GitHub
+    # Add it as an ENV Var 
+    # Add .mint package manager directory to the PATH
+- bash: |
+    RUGBY_LATEST_VERSION=`curl https://api.github.com/repos/swiftyfinch/Rugby/releases/latest | grep tag_name | cut -d '"' -f4`
+    echo "##vso[task.setvariable variable=RUGBY_LATEST_VERSION]$RUGBY_LATEST_VERSION"
+    echo "##vso[task.prependpath]/Users/runner/.mint/bin"
+  displayName: 'Fetch Rugby latest version'
+
+- task: Cache@2
+  inputs:
+    key: 'pods | "$(Agent.OS)" | $(System.DefaultWorkingDirectory)/Example/Podfile.lock'
+    path: './Example/Pods'
+    cacheHitVar: 'PODS_CACHE_FOUND'
+  displayName: 'Cache Pods directory'
+
+- task: Cache@2
+  inputs:
+    key: 'rugby | "$(RUGBY_LATEST_VERSION)"'
+    path: /Users/runner/.mint/packages
+    cacheHitVar: 'RUGBY_CACHE_FOUND'
+  displayName: 'Cache Rugby'
+
+- script: |
+    pod install
+    brew install mint
+    mint install swiftyfinch/rugby
+  workingDirectory: $(System.DefaultWorkingDirectory)/Example
+  condition:  or(eq(variables.RUGBY_CACHE_FOUND, 'false'), eq(variables.PODS_CACHE_FOUND, 'false'))
+  displayName: 'Install Mint and Rugby on cache miss'
+
+- script: |
+    mkdir -v /Users/runner/.mint/bin
+    ln -s /Users/runner/.mint/packages/github.com_swiftyfinch_rugby/build/$(RUGBY_LATEST_VERSION)/rugby /Users/runner/.mint/bin/rugby
+    rugby --help
+  displayName: 'Symlink Rugby to be indexed in PATH'
